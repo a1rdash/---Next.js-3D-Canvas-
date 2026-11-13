@@ -39,6 +39,13 @@ export default function RootLayout({
   return (
     <html lang="ru" data-theme="neon" suppressHydrationWarning className={`${manrope.variable} ${russo.variable} dark bg-background`}>
       <body className="font-sans antialiased">
+        {/* тема применяется до первой отрисовки, чтобы не было вспышки светлой темы */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var t=localStorage.getItem('avto-notarius-theme');if(t==='dark'||t==='light'||t==='neon'){var e=document.documentElement;e.dataset.theme=t;e.style.colorScheme=t==='light'?'light':'dark';e.classList.toggle('dark',t!=='light')}}catch(e){}})()",
+          }}
+        />
         {children}
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

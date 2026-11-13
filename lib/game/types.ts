@@ -205,6 +205,8 @@ export interface AuctionLot {
   startPrice: number
   car: Car
   status: 'pending' | 'live' | 'won' | 'lost'
+  /** когда начались торги (переживает перезагрузку страницы) */
+  startedAt?: number
   finalPrice?: number
   winner?: string
 }
@@ -285,6 +287,8 @@ export interface GameState {
   level: number
   license: number
   day: number
+  /** локальная дата последней синхронизации YYYY-MM-DD (для смены дня по реальному календарю) */
+  lastSyncDate: string
   phase: Phase
   weather: Weather
   clients: Seller[]

@@ -286,42 +286,59 @@ function tryNightRaid(state: GameState): GameState {
 }
 
 
-function advancePhase(state: GameState): GameState {
+/** Локальная дата YYYY-MM-DD — без UTC-сдвига (в отличие от toISOString). */
+export function localDayKey(now = Date.now()): string {
+  const d = new Date(now)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** Новый игровой день: +1 к счётчику и обновление всех дневных событий. */
+function beginNewDay(state: GameState): GameState {
+  const day = state.day + 1
+  let next: GameState = { ...state, day }
+  const { news, demand } = generateNews()
+  next = {
+    ...next,
+    news,
+    segmentDemand: demand,
+    partPriceMod: rand(0.85, 1.18),
+    protectionDays: Math.max(0, next.protectionDays - 1),
+    duel: { day, car: generateDuelCar(next), rival: pick(rivalPool), done: false },
+    clients: generateClients(next),
+    activeClientId: null,
+    auctionLots: generateAuctionLots(next),
+    blackMarket: generateBlackMarket(next),
+  }
+  // Car theft only on a new day, scaled by security (0..5)
+  const theftTable = [0.12, 0.08, 0.05, 0.03, 0.015, 0]
+  const theftChance = next.protectionDays > 0 ? 0 : theftTable[Math.min(5, next.upgrades.security)]
+  if (next.lot.length > 0 && chance(theftChance)) {
+    const victim = pick(next.lot)
+    const { [victim.id]: _drop, ...restListings } = next.listings
+    next = toast(
+      { ...next, lot: next.lot.filter((c) => c.id !== victim.id), listings: restListings },
+      `Ночью угнали ${victim.brand} ${victim.model}! Усиль охрану.`,
+      'bad',
+    )
+  }
+  return toast(next, `День ${next.day}. Новости рынка обновлены. Стоянка на месте.`, 'info')
+}
+
+/**
+ * Переход к следующей фазе суток.
+ * `allowNewDay` выключается при синхронизации по часам: там день меняется по календарной дате,
+ * а не по «ночь → утро», иначе можно получить два инкремента за один день.
+ */
+function advancePhase(state: GameState, allowNewDay = true): GameState {
   const idx = PHASES.indexOf(state.phase)
-  const newDay = idx === PHASES.length - 1
+  const newDay = allowNewDay && idx === PHASES.length - 1
   const phase = PHASES[(idx + 1) % PHASES.length]
   const weather = rollWeather(phase)
   // Lot cars never change on phase switch — only time, weather and day index.
-  let next: GameState = { ...state, phase, weather, day: newDay ? state.day + 1 : state.day }
+  let next: GameState = { ...state, phase, weather }
 
   if (newDay) {
-    const { news, demand } = generateNews()
-    next = {
-      ...next,
-      news,
-      segmentDemand: demand,
-      partPriceMod: rand(0.85, 1.18),
-      protectionDays: Math.max(0, next.protectionDays - 1),
-      duel: { day: next.day, car: generateDuelCar(next), rival: pick(rivalPool), done: false },
-      clients: generateClients(next),
-      activeClientId: null,
-      auctionLots: generateAuctionLots(next),
-      blackMarket: generateBlackMarket(next),
-    }
-    // Car theft only on new day night→morning, scaled by security (0..5)
-    const theftTable = [0.12, 0.08, 0.05, 0.03, 0.015, 0]
-    const theftChance = next.protectionDays > 0 ? 0 : theftTable[Math.min(5, next.upgrades.security)]
-    if (next.lot.length > 0 && chance(theftChance)) {
-      const victim = pick(next.lot)
-      const { [victim.id]: _drop, ...restListings } = next.listings
-      next = toast(
-        { ...next, lot: next.lot.filter((c) => c.id !== victim.id), listings: restListings },
-        `Ночью угнали ${victim.brand} ${victim.model}! Усиль охрану.`,
-        'bad',
-      )
-    }
-    next = tryNightRaid(next)
-    next = toast(next, `День ${next.day}. Новости рынка обновлены. Стоянка на месте.`, 'info')
+    next = beginNewDay(next)
   } else {
     // Same day phase change: keep clients & lot. Refresh shady jobs only.
     next = {
@@ -346,6 +363,7 @@ export function createInitialState(): GameState {
     level: 1,
     license: 0,
     day: 1,
+    lastSyncDate: localDayKey(),
     phase: 'morning',
     weather: 'clear',
     clients: [],
@@ -436,10 +454,24 @@ function gameReducerInner(state: GameState, action: GameAction): GameState {
     }
 
     case 'SYNC_CLOCK': {
-      // хронология идёт по реальному времени: фаза суток = местные часы
+      // хронология идёт по реальному времени: фаза суток = местные часы,
+      // новый игровой день — по смене локальной календарной даты
       let next = state
       const target = phaseForHour(action.hour)
-      for (let i = 0; i < 4 && next.phase !== target; i++) next = advancePhase(next)
+      const today = localDayKey(action.now)
+      if (state.lastSyncDate && today > state.lastSyncDate) {
+        next = beginNewDay(next)
+        next = {
+          ...next,
+          phase: target,
+          weather: rollWeather(target),
+          shadyJobs: generateShadyJobs(next),
+        }
+        if (target === 'evening' || target === 'night') next = tryNightRaid(next)
+      } else {
+        for (let i = 0; i < 4 && next.phase !== target; i++) next = advancePhase(next, false)
+      }
+      next = { ...next, lastSyncDate: today }
       const loan = next.loan
       if (loan && action.now > loan.dueAt && action.now - loan.lastPenaltyAt >= 86_400_000) {
         const pen = Math.round(loan.owed * 0.01)
@@ -450,7 +482,7 @@ function gameReducerInner(state: GameState, action: GameAction): GameState {
         }
         next = toast(next, `Кредит просрочен! Пеня ${pen.toLocaleString('ru-RU')} ₽, репутация −5`, 'bad')
       }
-      return next
+      return unlock(next)
     }
 
     case 'TAKE_LOAN': {
@@ -877,19 +909,22 @@ function gameReducerInner(state: GameState, action: GameAction): GameState {
     case 'AUCTION_START':
       return {
         ...state,
-        auctionLots: state.auctionLots.map((l) => (l.id === action.lotId ? { ...l, status: 'live' } : l)),
+        auctionLots: state.auctionLots.map((l) =>
+          l.id === action.lotId ? { ...l, status: 'live', startedAt: l.startedAt ?? Date.now() } : l,
+        ),
       }
 
     case 'AUCTION_END': {
       const lot = state.auctionLots.find((l) => l.id === action.lotId)
       if (!lot) return state
+      const noBids = action.winner === 'Никто'
       const won = action.winner === PLAYER
       const canPay = state.money >= action.price && state.lot.length < maxSlots(state)
       const status = won && canPay ? 'won' : 'lost'
       let next: GameState = {
         ...state,
         auctionLots: state.auctionLots.map((l) =>
-          l.id === lot.id ? { ...l, status, finalPrice: action.price, winner: action.winner } : l,
+          l.id === lot.id ? { ...l, status, finalPrice: noBids ? 0 : action.price, winner: action.winner } : l,
         ),
       }
       if (won && canPay) {
@@ -904,6 +939,7 @@ function gameReducerInner(state: GameState, action: GameAction): GameState {
         return unlock(addXp(next, 25))
       }
       if (won && !canPay) return toast(next, 'Нечем платить или нет места — лот ушёл следующему', 'bad')
+      if (noBids) return toast(next, 'Лот не продан — ставок не было', 'info')
       return toast(next, `${action.winner} забрал лот за ${formatMoney(action.price)}`, 'info')
     }
 
@@ -913,14 +949,16 @@ function gameReducerInner(state: GameState, action: GameAction): GameState {
       const risk = state.protectionDays > 0 ? job.risk * 0.5 : job.risk
       const remaining = state.shadyJobs.filter((j) => j.id !== job.id)
       if (chance(risk)) {
+        // списываем не больше, чем есть на счету, и в историю пишем фактическую сумму
+        const fine = Math.max(0, Math.min(state.money, job.fine))
         let fail: GameState = {
           ...state,
           shadyJobs: remaining,
-          money: Math.max(0, state.money - job.fine),
+          money: state.money - fine,
           reputation: clamp(state.reputation - job.repLoss, 0, 100),
         }
-        fail = logTx(fail, -job.fine, 'fine', `Штраф: ${job.title}`)
-        return toast(fail, `Спалились! Штраф ${formatMoney(job.fine)}, репутация −${job.repLoss}`, 'bad')
+        fail = logTx(fail, -fine, 'fine', `Штраф: ${job.title}`)
+        return toast(fail, `Спалились! Штраф ${formatMoney(fine)}, репутация −${job.repLoss}`, 'bad')
       }
       let next: GameState = {
         ...state,
@@ -1106,7 +1144,6 @@ function gameReducerInner(state: GameState, action: GameAction): GameState {
         {
           ...state,
           difficulty: action.id,
-          money: Math.max(state.money, 350_000 + def.startBonus),
         },
         `Сложность: ${def.label}`,
         'info',
@@ -1114,9 +1151,9 @@ function gameReducerInner(state: GameState, action: GameAction): GameState {
     }
 
     case 'CLAIM_DAILY': {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = localDayKey()
       if (state.daily.lastClaimDay === today) return toast(state, 'Награда уже получена сегодня', 'info')
-      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+      const yesterday = localDayKey(Date.now() - 86400000)
       const streak = state.daily.lastClaimDay === yesterday ? state.daily.streak + 1 : 1
       const idx = Math.min(DAILY_REWARDS.length - 1, streak - 1)
       const reward = DAILY_REWARDS[idx]
@@ -1184,7 +1221,10 @@ function gameReducerInner(state: GameState, action: GameAction): GameState {
     case 'START_DRIVE': {
       const car = state.lot.find((c) => c.id === action.carId)
       if (!car) return state
-      if (state.pendingDriveCarId) return toast(state, 'Сначала завершите текущий заезд', 'info')
+      // зависший pending (машину угнали/продали) не должен блокировать новые заезды
+      if (state.pendingDriveCarId && state.lot.some((c) => c.id === state.pendingDriveCarId)) {
+        return toast(state, 'Сначала завершите текущий заезд', 'info')
+      }
       return { ...state, pendingDriveCarId: car.id }
     }
 
@@ -1264,7 +1304,7 @@ function gameReducerInner(state: GameState, action: GameAction): GameState {
         contracts: state.contracts.map((x) => (x.id === c.id ? { ...x, status: 'done' as const } : x)),
         upgrades: {
           ...state.upgrades,
-          office: Math.min(UPGRADE_DEFS.office.max, state.upgrades.office + (c.reward > 150_000 ? 0 : 0)),
+          office: Math.min(UPGRADE_DEFS.office.max, state.upgrades.office + (c.reward > 150_000 ? 1 : 0)),
         },
         reputation: clamp(state.reputation + 4, 0, 100),
       }

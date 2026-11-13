@@ -42,7 +42,7 @@ export function MarketTab() {
         <p className="text-xs text-muted-foreground">
           {state.weather === 'rain' && 'Дождь: шины +25%. '}
           {state.weather === 'fog' && 'Туман: электрика +10%. '}
-          {state.phase === 'night' && 'Ночной рынок: −10% на всё. '}
+          {state.phase === 'night' && 'Ночной рынок: −5% на всё. '}
           Детали со склада дешевле ремонта в сервисе.
         </p>
         <div className="-mx-1 mt-2 flex gap-1.5 overflow-x-auto px-1 pb-1 scrollbar-none" role="tablist" aria-label="Категории">

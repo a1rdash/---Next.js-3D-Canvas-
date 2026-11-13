@@ -23,7 +23,7 @@ export function GarageTab({ onNavigate }: { onNavigate: (tab: TabId) => void }) 
   const { t } = useI18n()
   const active = state.clients.find((c) => c.id === state.activeClientId)
 
-  if (active) return <InspectionView seller={active} />
+  if (active) return <InspectionView key={active.id} seller={active} />
 
   return (
     <div className="flex flex-col gap-3">

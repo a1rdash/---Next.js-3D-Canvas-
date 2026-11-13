@@ -8,7 +8,7 @@ import {
   type Dispatch,
   type ReactNode,
 } from 'react'
-import { createInitialState, gameReducer, type GameAction } from './reducer'
+import { createInitialState, gameReducer, localDayKey, type GameAction } from './reducer'
 import type { GameState } from './types'
 
 const SAVE_KEY = 'avto-notarius-save-v1'
@@ -67,18 +67,12 @@ function loadSaved(): GameState {
       
       donateHistory: Array.isArray(parsed.donateHistory) ? parsed.donateHistory : [],
 
-      upgrades: {
-        slots: 0,
-        cleanliness: 0,
-        tools: 0,
-        security: 0,
-        office: 0,
-        ...(parsed.upgrades || {}),
-      },
+      upgrades: { ...base.upgrades, ...(parsed.upgrades || {}) },
 
       toasts: [],
       activeClientId: null,
-      money: typeof parsed.money === 'number' && parsed.money < 80_000 ? 450_000 : (typeof parsed.money === 'number' ? parsed.money : 450_000),
+      money: typeof parsed.money === 'number' ? parsed.money : 450_000,
+      lastSyncDate: typeof parsed.lastSyncDate === 'string' ? parsed.lastSyncDate : localDayKey(),
     }
   } catch {
     return createInitialState()

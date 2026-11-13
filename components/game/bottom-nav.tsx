@@ -12,7 +12,7 @@ const TAB_IDS: { id: TabId; key: string; label?: string; icon: typeof House }[] 
   { id: 'auction', key: 'nav.auction', icon: Gavel },
   { id: 'market', key: 'nav.market', icon: ShoppingCart },
   { id: 'profile', key: 'nav.profile', icon: User },
-  { id: 'about', key: 'nav.shop', icon: Info },
+  { id: 'about', key: 'nav.about', icon: Info },
 ]
 
 export function BottomNav({

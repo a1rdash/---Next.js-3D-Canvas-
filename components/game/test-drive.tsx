@@ -64,6 +64,7 @@ function TestDriveGame({
   const swipes = useRef(new Map<number, number>())
   const [showHint, setShowHint] = useState(!settings.driveHintDone)
   const finishedRef = useRef(false)
+  const finishTimer = useRef<number | null>(null)
   const [hud, setHud] = useState({ speedKmh: 0, hits: 0, progress: 0, leftMs: DURATION_MS, gear: 1, throttle: 0, maxKmh: 0, light: null as 'green' | 'yellow' | 'red' | null, lightLeft: 0, event: null as string | null, siren: false, violations: 0, cruiseOn: false, autoOn: false, blink: 0, warning: null as string | null })
   const [flash, setFlash] = useState(0)
   const [muted, setMuted] = useState(false)
@@ -107,7 +108,10 @@ function TestDriveGame({
             const score = Math.max(0, Math.round((distScore - hits * 8 - violations * 6) * stats.handling * (1 + car.tuning.engine * 0.06)))
             const clean = hits === 0 && violations === 0 && distanceM >= 1200
             // даём насладиться финишем секунду
-            window.setTimeout(() => doneRef.current(clean, score), 900)
+            finishTimer.current = window.setTimeout(() => {
+              finishTimer.current = null
+              doneRef.current(clean, score)
+            }, 900)
           },
         })
         engine = e
@@ -126,6 +130,15 @@ function TestDriveGame({
     // сцена создаётся один раз на заезд
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // отложенный финиш не должен срабатывать после закрытия заезда
+  useEffect(
+    () => () => {
+      if (finishTimer.current !== null) window.clearTimeout(finishTimer.current)
+      finishTimer.current = null
+    },
+    [],
+  )
 
   // Интерфейс тест-драйва строго горизонтальный: при вертикальном экране поворачиваем его на 90°
   useEffect(() => {
@@ -262,7 +275,7 @@ function TestDriveGame({
           </div>
           <div className="rounded-2xl border border-white/20 bg-black/25 px-3 py-1 text-right backdrop-blur-md">
             <p className="font-display text-base leading-none tabular-nums text-white">{mm}:{String(ss).padStart(2, '0')}</p>
-            <p className={cn('text-[10px] tabular-nums', hud.hits + hud.violations > 0 ? 'text-rose-300' : 'text-emerald-300')}>штрафы {hud.hits + hud.violations}</p>
+            <p className={cn('text-[10px] tabular-nums', hud.hits + hud.violations > 0 ? 'text-rose-300' : 'text-emerald-300')}>нарушения {hud.hits + hud.violations}</p>
           </div>
         </div>
 

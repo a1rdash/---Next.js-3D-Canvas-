@@ -97,6 +97,10 @@ export function AuctionTab() {
                             <Trophy className="size-4 text-warn" aria-hidden />
                             <span className="font-semibold text-success">Ваш за {formatMoney(lot.finalPrice ?? 0)}</span>
                           </>
+                        ) : lot.winner === PLAYER && lot.status === 'lost' ? (
+                          <span className="text-destructive">Не оплачен — не хватило денег или места</span>
+                        ) : lot.winner === 'Никто' ? (
+                          <span className="text-muted-foreground">Не продан — ставок не было</span>
                         ) : (
                           <span className="text-muted-foreground">
                             Ушёл: {lot.winner} · {formatMoney(lot.finalPrice ?? 0)}

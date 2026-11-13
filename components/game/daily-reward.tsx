@@ -4,13 +4,14 @@ import { useI18n } from '@/lib/i18n'
 
 import { useEffect, useState } from 'react'
 import { DAILY_REWARDS } from '@/lib/game/data'
+import { localDayKey } from '@/lib/game/reducer'
 import { useGame } from '@/lib/game/store'
 import { NeonButton, Panel } from './ui'
 
 export function DailyRewardModal() {
   const { state, dispatch } = useGame()
   const { t, formatMoney } = useI18n()
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDayKey()
   const claimed = state.daily?.lastClaimDay === today
   const [open, setOpen] = useState(false)
 
@@ -21,7 +22,7 @@ export function DailyRewardModal() {
   if (!open || claimed) return null
 
   const nextStreak = (() => {
-    const y = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+    const y = localDayKey(Date.now() - 86400000)
     return state.daily?.lastClaimDay === y ? state.daily.streak + 1 : 1
   })()
   const reward = DAILY_REWARDS[Math.min(DAILY_REWARDS.length - 1, nextStreak - 1)]

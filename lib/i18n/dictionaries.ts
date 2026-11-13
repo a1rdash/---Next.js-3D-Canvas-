@@ -9,6 +9,7 @@ const ru: Dict = {
   'nav.market': 'Рынок',
   'nav.profile': 'Профиль',
   'nav.shop': 'Магазин',
+  'nav.about': 'О нас',
 
   'hud.day': 'День',
   'hud.rep': 'Репутация',
@@ -118,8 +119,6 @@ const ru: Dict = {
   'lot.forecast': 'прогноз',
   'lot.testDrive': 'Тест-драйв / обгон',
   'market.parts': 'Авторынок запчастей',
-  'market.upgrades': 'Улучшения гаража',
-  'market.stock': 'Склад',
   'market.stockHint': 'Деталей: {n}. Ставьте их на машины во вкладке «Стоянка».',
   'market.buy': 'Купить',
   'market.level': 'Уровень {lvl} из {max}',
@@ -175,14 +174,11 @@ const ru: Dict = {
   'music.auto': 'Авто-настроение',
   'music.autoHint': 'Трек меняется со временем суток',
   'music.vol': 'Громкость',
-  'daily.claim': 'Забрать',
-  'daily.later': 'Позже',
   'minigame.quit': 'Выход',
   'minigame.hits': 'Столкновения: {n}',
   'minigame.time': '{m}:{s}',
   'minigame.progress': 'Дистанция',
   'hud.next': 'Далее',
-  'common.close': 'Закрыть'
 }
 
 

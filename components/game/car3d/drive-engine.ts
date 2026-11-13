@@ -307,6 +307,7 @@ export class DriveEngine {
   private snowData: Float32Array | null = null
   private fogBase = 0.0055
   private hemiBase = 0.9
+  private exposureBase = 1
   private sunBase = 2
   private dark = 0
   private darkDir = 1
@@ -324,7 +325,6 @@ export class DriveEngine {
   private flyers: Flyer[] = []
   private warning: string | null = null
   private warnLeft = 0
-  private pedHits = 0
   private blinkT = 0
   private darkTarget: number | null = null
   private autoOn = false
@@ -354,6 +354,7 @@ export class DriveEngine {
     // «постобработка»: тональная коррекция только на средней/высокой графике
     this.renderer.toneMapping = this.gfx.post ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping
     this.renderer.toneMappingExposure = phase === 'night' ? 0.95 : phase === 'day' ? 1.05 : 1
+    this.exposureBase = this.renderer.toneMappingExposure
     // тени: выкл. на низкой, простые на средней, мягкие на высокой
     this.renderer.shadowMap.enabled = this.gfx.shadows
     this.renderer.shadowMap.type = this.gfx.softShadows ? THREE.PCFSoftShadowMap : THREE.BasicShadowMap
@@ -1398,7 +1399,6 @@ export class DriveEngine {
       bounced: false,
     })
     respawn()
-    this.pedHits += 1
     this.violations += 1
     this.shake = Math.max(this.shake, 0.7)
     this.penalty = Math.min(this.penalty, 0.55)
@@ -1717,7 +1717,13 @@ export class DriveEngine {
         this.renderer.toneMappingExposure = 0.95 + flick * 0.6
       } else {
         this.hemi.intensity += (0.45 - this.hemi.intensity) * Math.min(1, dt * 4)
+        this.renderer.toneMappingExposure += (this.exposureBase - this.renderer.toneMappingExposure) * Math.min(1, dt * 4)
       }
+    } else {
+      // дождь закончился — гасим молнию и возвращаем экспозицию, иначе вспышка «залипает»
+      this.lightning = 0
+      this.hemi.intensity += (this.hemiBase * (1 - 0.5 * this.dark) - this.hemi.intensity) * Math.min(1, dt * 4)
+      this.renderer.toneMappingExposure += (this.exposureBase - this.renderer.toneMappingExposure) * Math.min(1, dt * 4)
     }
     if (this.spray && this.sprayData) {
       const s = this.sprayData
@@ -1746,8 +1752,9 @@ export class DriveEngine {
       }
       ;(this.spray.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true
     }
-    // лужи: блики на асфальте дрожат
+    // лужи: блики на асфальте дрожат; после дождя покрытие постепенно снова становится матовым
     if (this.curWeather === 'rain') this.roadMat.roughness = 0.2 + Math.sin(this.elapsed * 0.0015) * 0.03
+    else this.roadMat.roughness += (0.88 - this.roadMat.roughness) * Math.min(1, dt * 2)
   }
 
   /* ---------------------------------------------------------------- */

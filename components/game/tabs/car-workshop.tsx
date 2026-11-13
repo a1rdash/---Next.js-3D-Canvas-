@@ -1,14 +1,7 @@
 'use client'
 
-/** Ad stub for monetization — replace with real rewarded ad SDK later. */
-function handleWatchAd(onRewarded: () => void) {
-  // Simulated short ad success
-  onRewarded()
-}
-
-
 import dynamic from 'next/dynamic'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Crown, FileWarning, Megaphone, Wrench, Zap } from 'lucide-react'
 import { PART_ZONE, ZONE_LABELS, ZONES } from '@/lib/game/data'
 import { legalizeInfo, partById, realValue, repairCost, wearInfo } from '@/lib/game/generators'
@@ -33,11 +26,23 @@ export function CarWorkshop({ car, onBack }: { car: Car; onBack: () => void }) {
   const cost = car.purchasePrice + car.invested
   const [, setTick] = useState(0)
   const [counterDraft, setCounterDraft] = useState<Record<string, string>>({})
+  // имитация rewarded-рекламы: VIP выдаётся не мгновенно, а после 5-секундного «ролика»
+  const [adUntil, setAdUntil] = useState(0)
+  const adTimer = useRef<number | null>(null)
+  const adLeft = Math.max(0, Math.ceil((adUntil - Date.now()) / 1000))
 
   useEffect(() => {
     const id = setInterval(() => setTick((n) => n + 1), 1000)
     return () => clearInterval(id)
   }, [])
+
+  useEffect(
+    () => () => {
+      if (adTimer.current !== null) window.clearTimeout(adTimer.current)
+      adTimer.current = null
+    },
+    [],
+  )
   const listing = state.listings[car.id]
   const offers = listing?.offers
   const saleReady = listing ? Date.now() >= listing.readyAt : false
@@ -203,10 +208,19 @@ export function CarWorkshop({ car, onBack }: { car: Car; onBack: () => void }) {
               tone="magenta"
               size="sm"
               className="max-w-[11rem] whitespace-normal text-[10px] leading-tight"
-              onClick={() => handleWatchAd(() => dispatch({ type: 'VIP_BOOST', carId: car.id }))}
+              disabled={adLeft > 0}
+              onClick={() => {
+                if (adLeft > 0 || adTimer.current !== null) return
+                setAdUntil(Date.now() + 5000)
+                adTimer.current = window.setTimeout(() => {
+                  adTimer.current = null
+                  setAdUntil(0)
+                  dispatch({ type: 'VIP_BOOST', carId: car.id })
+                }, 5000)
+              }}
             >
               <Crown aria-hidden />
-              Поздравить VIP (×2)
+              {adLeft > 0 ? `Реклама… ${adLeft} с` : 'Поздравить VIP (×2)'}
             </NeonButton>
           ) : state.vipBoostCarId === car.id ? (
             <Badge tone="magenta">VIP ×2 навара</Badge>

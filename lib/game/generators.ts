@@ -393,7 +393,7 @@ export function partPrice(part: PartDef, state: Pick<GameState, 'partPriceMod' |
   if (state.weather === 'rain' && part.category === 'tires') mod *= 1.25
   if (state.weather === 'fog' && part.category === 'electrics') mod *= 1.1
   if (state.phase === 'night') mod *= 0.95
-  // Never free — minimum ₽5
+  // Never free — minimum ₽500
   return Math.max(500, roundTo(part.basePrice * mod, 100))
 }
 
@@ -458,8 +458,8 @@ export function wearInfo(car: Car) {
   const accelMul = clamp(1 - Math.pow(wear, 1.1) * 0.75, 0.22, 1)
   const label =
     wear < 0.15 ? 'Как новая' : wear < 0.35 ? 'Лёгкий износ' : wear < 0.55 ? 'Заметный износ' : wear < 0.75 ? 'Сильный износ' : 'Убитая'
-  const engineDamaged = eng < 0.45 || car.defects.some((d) => d.zone === 'engine' && d.severity >= 3)
-  const suspensionDamaged = sus < 0.45 || car.defects.some((d) => d.zone === 'suspension' && d.severity >= 3)
+  const engineDamaged = eng < 0.45 || car.defects.some((d) => d.zone === 'engine' && d.severity >= 0.7)
+  const suspensionDamaged = sus < 0.45 || car.defects.some((d) => d.zone === 'suspension' && d.severity >= 0.7)
   return { wear, speedMul, accelMul, label, engineDamaged, suspensionDamaged }
 }
 

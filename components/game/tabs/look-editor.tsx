@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { FREE_LOOKS, LOOK_CATALOG, LOOK_COLOR_COST } from '@/lib/game/data'
 import type { LookKind } from '@/lib/game/content'
 import { formatMoney } from '@/lib/game/random'
@@ -17,6 +17,10 @@ const PAINT_QUICK = ['#c0182f', '#1e6bff', '#f2f4f8', '#15171c', '#ffb020', '#1f
 /** Палитра + произвольный цвет; применяется кнопкой (платно), а не при каждом движении ползунка. */
 function ColorRow({ label, current, swatches, cost, onApply }: { label: string; current: string; swatches: string[]; cost: number; onApply: (hex: string) => void }) {
   const [draft, setDraft] = useState(current)
+  // при переключении на другую машину/цвет черновик должен следовать за текущим значением
+  useEffect(() => {
+    setDraft(current)
+  }, [current])
   return (
     <div>
       <p className="mb-1 text-[11px] font-semibold text-muted-foreground">{label}</p>

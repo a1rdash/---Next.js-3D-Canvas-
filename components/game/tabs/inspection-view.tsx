@@ -83,6 +83,18 @@ export function InspectionView({ seller }: { seller: Seller }) {
   const [scanZone, setScanZone] = useState<string | null>(null)
   const [scanProgress, setScanProgress] = useState(0)
   const [scanStep, setScanStep] = useState(0)
+  const scanTimer = useRef<number | null>(null)
+  const scanBusy = useRef(false)
+
+  // не оставляем таймер сканирования после размонтирования (уход с вкладки, смена продавца)
+  useEffect(
+    () => () => {
+      if (scanTimer.current !== null) window.clearInterval(scanTimer.current)
+      scanTimer.current = null
+      scanBusy.current = false
+    },
+    [],
+  )
 
   const { car } = seller
   const [offer, setOffer] = useState(() => roundTo(seller.askingPrice * 0.8, 1000))
@@ -207,27 +219,33 @@ export function InspectionView({ seller }: { seller: Seller }) {
               <li key={zone}>
                 <button
                   type="button"
-                  disabled={done}
+                  disabled={done || scanBusy.current || !!scanZone}
                   onClick={() => {
+                    if (scanBusy.current) return
                     const cfg = ZONE_SCAN[zone]
                     if (!cfg) return
+                    scanBusy.current = true
                     setScanZone(zone)
                     viewerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
                     setScanProgress(0)
                     setScanStep(0)
                     const started = Date.now()
                     const total = cfg.ms
+                    if (scanTimer.current !== null) window.clearInterval(scanTimer.current)
                     const tick = window.setInterval(() => {
                       const p = Math.min(1, (Date.now() - started) / total)
                       setScanProgress(p)
                       setScanStep(Math.min(cfg.steps.length - 1, Math.floor(p * cfg.steps.length)))
                       if (p >= 1) {
                         window.clearInterval(tick)
+                        scanTimer.current = null
+                        scanBusy.current = false
                         dispatch({ type: 'INSPECT_ZONE', sellerId: seller.id, zone })
                         setScanZone(null)
                         setScanProgress(0)
                       }
                     }, 50)
+                    scanTimer.current = tick
                   }}
                   className={cn(
                     'flex h-full w-full flex-col gap-1.5 rounded-xl border p-2 text-left transition-colors',

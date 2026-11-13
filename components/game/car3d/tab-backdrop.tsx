@@ -12,7 +12,6 @@ export function TabBackdrop({ tab, phase, garageLevel }: { tab: TabId; phase: Ph
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stateRef = useRef<{ renderer: THREE.WebGLRenderer; current: BackdropScene | null; raf: number; resize: () => void } | null>(null)
   const [failed, setFailed] = useState(false)
-  const [fadeKey, setFadeKey] = useState(0)
   const { season } = useEnv()
   const { config: gfx } = useSettings()
   const gfxRef = useRef<GraphicsConfig>(gfx)
@@ -69,6 +68,7 @@ export function TabBackdrop({ tab, phase, garageLevel }: { tab: TabId; phase: Ph
     return () => {
       cancelAnimationFrame(st.raf)
       ro.disconnect()
+      ;(st.current?.scene.userData.envTexture as THREE.Texture | undefined)?.dispose()
       st.current?.dispose()
       renderer.dispose()
       stateRef.current = null
@@ -98,7 +98,13 @@ export function TabBackdrop({ tab, phase, garageLevel }: { tab: TabId; phase: Ph
           const env = pm.fromScene(new RoomEnvironment(), 0.04).texture
           next.scene.environment = env
           next.scene.environmentIntensity = 0.55
+          next.scene.userData.envTexture = env
           pm.dispose()
+        }
+        if (cancelled || !stateRef.current) {
+          ;(next.scene.userData.envTexture as THREE.Texture | undefined)?.dispose()
+          next.dispose()
+          return
         }
         const w = canvasRef.current?.clientWidth || 360
         const h = canvasRef.current?.clientHeight || 640
@@ -106,8 +112,10 @@ export function TabBackdrop({ tab, phase, garageLevel }: { tab: TabId; phase: Ph
         next.camera.updateProjectionMatrix()
         const prev = st.current
         st.current = next
-        prev?.dispose()
-        setFadeKey((n) => n + 1)
+        if (prev) {
+          ;(prev.scene.userData.envTexture as THREE.Texture | undefined)?.dispose()
+          prev.dispose()
+        }
       } catch (e) {
         console.error('backdrop failed', e)
         setFailed(true)
@@ -121,7 +129,7 @@ export function TabBackdrop({ tab, phase, garageLevel }: { tab: TabId; phase: Ph
   if (failed) return null
   return (
     <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden>
-      <canvas key={fadeKey ? 'c' : 'c'} ref={canvasRef} className="h-full w-full animate-in fade-in duration-700" />
+      <canvas ref={canvasRef} className="h-full w-full animate-in fade-in duration-700" />
       <div className="absolute inset-0 bg-gradient-to-b from-background/60 via-background/35 to-background/75" />
     </div>
   )

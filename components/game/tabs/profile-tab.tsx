@@ -1,7 +1,7 @@
 'use client'
 
 import { Award, BadgeCheck, Lock, Shield, Sparkles, Trophy } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ACHIEVEMENTS,
   DIFFICULTY_DEFS,
@@ -33,6 +33,11 @@ export function ProfileTab() {
   const { theme, setTheme } = useTheme()
   const settings = useSettings()
   const [ledgerFilter, setLedgerFilter] = useState<'all' | 'in' | 'out' | 'donate'>('all')
+  // значение читаем после монтирования: на сервере localStorage нет, иначе hydration mismatch
+  const [musicOn, setMusicOn] = useState(true)
+  useEffect(() => {
+    setMusicOn(localStorage.getItem('avto-notarius-music') !== 'off')
+  }, [])
 
   const needXp = xpForLevel(state.level)
   const xpPct = Math.min(100, Math.round((state.xp / needXp) * 100))
@@ -58,6 +63,7 @@ export function ProfileTab() {
                 key={id}
                 type="button"
                 aria-disabled={locked}
+                disabled={locked}
                 onClick={() => dispatch({ type: 'SET_DIFFICULTY', id })}
                 className={cn(
                   'min-h-9 rounded-full px-3 py-1 text-[11px] font-semibold',
@@ -88,9 +94,10 @@ export function ProfileTab() {
             <input
               type="checkbox"
               className="size-5 accent-neon"
-              defaultChecked={typeof window !== 'undefined' && localStorage.getItem('avto-notarius-music') !== 'off'}
+              checked={musicOn}
               onChange={(e) => {
                 const on = e.target.checked
+                setMusicOn(on)
                 localStorage.setItem('avto-notarius-music', on ? 'on' : 'off')
                 window.dispatchEvent(new CustomEvent('avto-music-toggle', { detail: on }))
                 if (!on) getSynth().stop()

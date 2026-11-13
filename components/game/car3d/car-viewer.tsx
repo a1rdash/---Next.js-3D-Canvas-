@@ -356,12 +356,20 @@ export default function CarViewer({ car, className, focus = null, scanning = fal
       floorTex.dispose()
       bgTex.dispose()
       envTex.dispose()
+      // геометрии/материалы студии (циклорама, потолок, софтбоксы, скан-плоскость, кольцо)
+      scene.traverse((o) => {
+        const mesh = o as THREE.Mesh
+        if (mesh.geometry) mesh.geometry.dispose()
+        const mat = mesh.material
+        if (Array.isArray(mat)) mat.forEach((m) => m.dispose())
+        else mat?.dispose()
+      })
       pmrem.dispose()
       renderer.dispose()
       renderer.domElement.remove()
       apiRef.current = null
     }
-  }, [])
+  }, [gfx.antialias, gfx.dpr, gfx.minDpr, gfx.shadows, gfx.softShadows, gfx.post, gfx.fps])
 
   /* ---------- реакции на изменения ---------- */
   const prevTuning = useRef(car.tuning)
