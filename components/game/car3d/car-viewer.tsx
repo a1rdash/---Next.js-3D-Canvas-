@@ -1,5 +1,6 @@
 'use client'
 
+import { installCarPaintFallback } from '@/lib/shaders/car-paint'
 import { useSettings } from '@/lib/settings'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
@@ -34,6 +35,8 @@ export interface CarViewerProps {
   night?: boolean
 }
 
+const PAINT_SUN = new THREE.Vector3(0.4, 0.8, 0.45).normalize()
+
 export default function CarViewer({ car, className, focus = null, scanning = false, showControls = true, night = false }: CarViewerProps) {
   const mountRef = useRef<HTMLDivElement>(null)
   const apiRef = useRef<{
@@ -44,6 +47,7 @@ export default function CarViewer({ car, className, focus = null, scanning = fal
     setTuning: (c: Car) => void
     setCondition: (c: Car) => void
     setLook: (c: Car) => void
+    setAttachments: (c: Car) => void
   } | null>(null)
   const [failed, setFailed] = useState(false)
   const [active, setActive] = useState('')
@@ -51,7 +55,10 @@ export default function CarViewer({ car, className, focus = null, scanning = fal
   carRef.current = car
 
   /* ---------- сцена ---------- */
-  const gfx = useSettings().config
+  const settings = useSettings()
+  const gfx = settings.config
+  const heavyRef = useRef(settings.heavy)
+  heavyRef.current = settings.heavy
   useEffect(() => {
     const mount = mountRef.current
     if (!mount) return
@@ -62,6 +69,7 @@ export default function CarViewer({ car, className, focus = null, scanning = fal
       setFailed(true)
       return
     }
+    installCarPaintFallback(renderer) // если шейдер краски не скомпилируется — автоматический откат
     // DPI и тени зависят от уровня графики
     renderer.setPixelRatio(Math.max(gfx.minDpr, Math.min(window.devicePixelRatio || 1, gfx.dpr)))
     renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -234,7 +242,7 @@ export default function CarViewer({ car, className, focus = null, scanning = fal
         scene.remove(built.root)
         built.dispose()
       }
-      built = buildCar({ bodyType: c.bodyType, colorName: c.color, tuning: c.tuning, condition: c.condition, look: c.look })
+      built = buildCar({ bodyType: c.bodyType, colorName: c.color, tuning: c.tuning, condition: c.condition, look: c.look, attachments: c.attachments, paint: { quality: gfx.paintShader, fakeEnv: 0.3 } })
       built.root.traverse((o) => {
         if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true
       })
@@ -273,6 +281,7 @@ export default function CarViewer({ car, className, focus = null, scanning = fal
       setTuning: (c) => built?.setTuning(c.tuning, true),
       setCondition: (c) => built?.setCondition(c.condition),
       setLook: (c) => built?.setLook(c.look ?? {}),
+      setAttachments: (c) => built?.setAttachments(c.attachments ?? []),
     }
     setCarModel(carRef.current)
 
@@ -307,6 +316,7 @@ export default function CarViewer({ car, className, focus = null, scanning = fal
     io.observe(mount)
     const loop = () => {
       raf = requestAnimationFrame(loop)
+      if (heavyRef.current || document.hidden) return // под тест-драйвом / в фоне не рисуем
       if (!visible) {
         clock.getDelta()
         return
@@ -314,6 +324,7 @@ export default function CarViewer({ car, className, focus = null, scanning = fal
       const dt = Math.min(clock.getDelta(), 0.05)
       if (built) {
         built.tick(dt, 0)
+        built.updatePaintSun(camera, PAINT_SUN)
         if (slide > 0) {
           slide = Math.max(0, slide - dt * 1.1)
           const e = ease(1 - slide)
@@ -382,6 +393,23 @@ export default function CarViewer({ car, className, focus = null, scanning = fal
     else if (t.suspension > p.suspension) apiRef.current?.fly('wheel')
     prevTuning.current = t
   }, [car.tuning.engine, car.tuning.suspension, car.tuning.visual, car.tuning.wheels]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // установленные детали (спойлер, обвес, диффузор…) появляются на модели сразу, камера показывает место установки
+  const attachKey = (car.attachments ?? []).join(',')
+  const prevAttach = useRef<string[]>(car.attachments ?? [])
+  useEffect(() => {
+    apiRef.current?.setAttachments(car)
+    const now = car.attachments ?? []
+    const added = now.filter((k) => !prevAttach.current.includes(k))
+    if (added.length) {
+      const front = ['splitter', 'ledbar', 'scoop']
+      const side = ['skirts', 'widebody']
+      const k = added[0]
+      apiRef.current?.fly(front.includes(k) ? 'front' : side.includes(k) ? 'side' : 'rear')
+    }
+    prevAttach.current = now
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attachKey])
 
   // кастом (краска, покрытие, диски, шины, салон) сразу виден на модели
   const lookKey = JSON.stringify(car.look ?? {})

@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { BrandLogo } from '../brand-logo'
 import { Meter, NeonButton, Panel } from '../ui'
 import { LookEditor } from './look-editor'
+import { ATTACH_LABELS } from '@/lib/game/data'
 
 const CarViewer = dynamic(() => import('../car3d/car-viewer'), {
   ssr: false,
@@ -86,6 +87,7 @@ export function GarageStudio({ onNavigate }: { onNavigate: (t: TabId) => void })
         </div>
         <p className="mt-2 text-[11px] text-muted-foreground">
           Тюнинг: двигатель {car.tuning.engine}/3 · подвеска {car.tuning.suspension}/3 · обвес {car.tuning.visual}/3 · диски {(car.tuning.wheels ?? 0)}/3 · коробка {(car.tuning.gearbox ?? 0)}/3
+          {(car.attachments ?? []).length ? ` · установлено: ${(car.attachments ?? []).map((k) => ATTACH_LABELS[k] ?? k).join(', ')}` : ''}
           {car.features?.cruise ? ' · круиз' : ''}{car.features?.autopilot ? ' · автопилот' : ''}
         </p>
       </Panel>

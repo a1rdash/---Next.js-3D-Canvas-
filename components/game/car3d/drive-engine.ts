@@ -2,6 +2,11 @@ import * as THREE from 'three'
 import type { Phase, Tuning, Weather, BodyType, CarLook } from '@/lib/game/types'
 import { registerAudioContext, unregisterAudioContext } from '@/lib/audio-focus'
 import type { GraphicsConfig } from '@/lib/settings'
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+import { installCarPaintFallback } from '@/lib/shaders/car-paint'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import { buildCar, paintFromName, type BuiltCar } from './build-car'
 
@@ -11,7 +16,7 @@ import { buildCar, paintFromName, type BuiltCar } from './build-car'
 
 export interface DriveOptions {
   canvas: HTMLCanvasElement
-  car: { bodyType: BodyType; color: string; tuning: Tuning; look?: CarLook; condition?: Partial<Record<'engine' | 'body' | 'interior' | 'suspension' | 'electrics' | 'documents', number>> }
+  car: { bodyType: BodyType; color: string; tuning: Tuning; look?: CarLook; attachments?: string[]; condition?: Partial<Record<'engine' | 'body' | 'interior' | 'suspension' | 'electrics' | 'documents', number>> }
   /** speed/accel уже учитывают износ двигателя, подвески и повреждения конкретной машины */
   stats: { speed: number; accel?: number; handling: number; reliability: number }
   weather: Weather | 'snow'
@@ -31,7 +36,7 @@ export interface DriveOptions {
 /** Скорость трафика — не зависит от вашей машины */
 const TRAFFIC_BASE = 34
 /** Запасной профиль графики (средняя), если не передан */
-const DEFAULT_GFX: GraphicsConfig = { label: 'Средняя', hint: '', dpr: 1.25, minDpr: 0.85, shadows: true, softShadows: false, shadowMapSize: 1024, particles: 0.5, post: true, antialias: true, fps: 45 }
+const DEFAULT_GFX: GraphicsConfig = { label: 'Средняя', hint: '', dpr: 1.25, minDpr: 0.85, shadows: true, softShadows: false, shadowMapSize: 1024, particles: 0.5, post: true, antialias: true, paintShader: 'lite', bloom: false, fps: 45 }
 /** Светофор: зелёный 7 с, жёлтый 2 с, красный 5 с */
 const LIGHT_G = 7
 const LIGHT_Y = 2
@@ -284,6 +289,11 @@ export class DriveEngine {
   private lampsOn: boolean
   private wet: boolean
   private frameAvg = 16
+  /** Ступень деградации качества при низком FPS: 0 — нет, 1 — без теней, 2 — без частиц, 3 — без свечения */
+  private degradeStage = 0
+  private composer: EffectComposer | null = null
+  private paintSun = new THREE.Vector3(0.4, 0.8, 0.45).normalize()
+  private noParticles = false
   private pr: number
   private audio: { ctx: AudioContext; osc1: OscillatorNode; osc2: OscillatorNode; osc3: OscillatorNode; gain: GainNode; filt: BiquadFilterNode } | null = null
   /** «газ»: 0…1 от максимальной скорости именно этой машины */
@@ -347,6 +357,7 @@ export class DriveEngine {
     this.wet = weather === 'rain'
 
     this.renderer = new THREE.WebGLRenderer({ canvas: o.canvas, antialias: this.gfx.antialias, powerPreference: this.gfx.fps === 0 ? 'high-performance' : 'default' })
+    installCarPaintFallback(this.renderer) // откат на обычный материал, если шейдер краски не скомпилируется
     // DPI рендера зависит от уровня графики (низкая — ниже родного разрешения)
     this.pr = Math.max(this.gfx.minDpr, Math.min(window.devicePixelRatio || 1, this.gfx.dpr))
     this.renderer.setPixelRatio(this.pr)
@@ -409,7 +420,7 @@ export class DriveEngine {
     this.buildWorld()
 
     /* машина игрока */
-    this.player = buildCar({ bodyType: o.car.bodyType, colorName: o.car.color, tuning: o.car.tuning, condition: o.car.condition, look: o.car.look })
+    this.player = buildCar({ bodyType: o.car.bodyType, colorName: o.car.color, tuning: o.car.tuning, condition: o.car.condition, look: o.car.look, attachments: o.car.attachments, paint: { quality: this.gfx.paintShader, fakeEnv: 1 } })
     this.player.root.traverse((m) => {
       if ((m as THREE.Mesh).isMesh) (m as THREE.Mesh).castShadow = this.gfx.shadows
     })
@@ -428,6 +439,7 @@ export class DriveEngine {
     this.buildWalkers()
 
     this.ro = new ResizeObserver(() => this.resize())
+    this.initPost()
     this.ro.observe(o.canvas.parentElement ?? o.canvas)
     this.resize()
     this.initAudio()
@@ -794,7 +806,7 @@ export class DriveEngine {
     t.vx = 0
     t.spin = 0
     t.active = true
-    t.changeCd = 99
+    t.changeCd = 0
     t.built.root.visible = true
     t.built.root.rotation.set(0, 0, 0)
     t.built.root.scale.set(1, 1, 1)
@@ -1041,6 +1053,12 @@ export class DriveEngine {
   private loop = () => {
     if (this.disposed) return
     this.raf = requestAnimationFrame(this.loop)
+    // вкладка скрыта: не считаем и не рисуем (и не накапливаем огромный dt)
+    if (document.hidden) {
+      this.clock.getDelta()
+      this.frameAcc = 0
+      return
+    }
     // ограничение FPS по уровню графики: копим время и пропускаем лишние кадры
     this.frameAcc += this.clock.getDelta()
     if (this.gfx.fps > 0 && this.frameAcc < 1 / this.gfx.fps - 0.002) return
@@ -1048,7 +1066,9 @@ export class DriveEngine {
     this.frameAcc = 0
     const dt = Math.min(raw, 0.05)
     this.update(dt)
-    this.renderer.render(this.scene, this.camera)
+    this.player.updatePaintSun(this.camera, this.paintSun)
+    if (this.composer) this.composer.render(dt)
+    else this.renderer.render(this.scene, this.camera)
     // адаптивное разрешение
     this.frameAvg += (raw * 1000 - this.frameAvg) * 0.03
     const budgetMs = this.gfx.fps > 0 ? 1000 / this.gfx.fps + 8 : 26
@@ -1056,6 +1076,17 @@ export class DriveEngine {
       this.pr = Math.max(this.gfx.minDpr, this.pr - 0.2)
       this.renderer.setPixelRatio(this.pr)
       this.resize()
+      this.frameAvg = 16
+    } else if (this.frameAvg > budgetMs && this.degradeStage < 3) {
+      // разрешение уже минимальное, а кадры всё ещё долгие: по очереди отключаем самое дорогое
+      this.degradeStage += 1
+      if (this.degradeStage === 1) this.sun.castShadow = false
+      if (this.degradeStage === 2) {
+        this.noParticles = true
+        this.composer?.dispose() // свечение отключаем вторым
+        this.composer = null
+      }
+      if (this.degradeStage === 3) for (const g of this.lampGlows) g.visible = false
       this.frameAvg = 16
     }
   }
@@ -1203,8 +1234,9 @@ export class DriveEngine {
           continue
         }
       } else {
-        t.changeCd -= dt
-        if (t.changeCd <= 0) {
+        // случайные перестроения — только у обычного трафика; у спецтранспорта своя логика (emergencyDrive)
+        if (!t.emergency) t.changeCd -= dt
+        if (!t.emergency && t.changeCd <= 0) {
           if (Math.random() < 0.4) {
             const dir = Math.random() < 0.5 ? -1 : 1
             const next = Math.max(0, Math.min(LANES - 1, Math.round(t.target) + dir))
@@ -1214,7 +1246,7 @@ export class DriveEngine {
           t.changeCd = rnd(4, 9)
         }
         const prevLane = t.lane
-        t.lane += (t.target - t.lane) * Math.min(1, dt * 1.6)
+        t.lane += (t.target - t.lane) * Math.min(1, dt * (t.emergency ? 3 : 1.6)) // плавно, без «телепорта»
         t.x = laneX(t.lane)
         t.built.root.rotation.y = -(t.lane - prevLane) * 6
       }
@@ -1222,7 +1254,7 @@ export class DriveEngine {
       if (t.emergency && t.bar) {
         const on = Math.floor(this.tClock * 5) % 2 === 0
         ;(t.bar.material as THREE.MeshStandardMaterial).emissive.setHex(on ? 0xff1a1a : 0x1a4bff)
-        t.lane = t.target = (() => { let l = 0, b = -1; for (let k = 0; k < LANES; k++) { const d = Math.abs(laneX(k) - this.px); if (d > b) { b = d; l = k } } return l })()
+        this.emergencyDrive(t, dt)
       }
       if (!t.isStatic) t.built.setLights(this.lampsOn, v - t.speed > 18 && t.z > -60)
       t.built.tick(dt, t.speed)
@@ -1338,8 +1370,9 @@ export class DriveEngine {
       this.wet = next === 'rain'
     }
     const w = this.curWeather
-    if (this.rain) this.rain.visible = w === 'rain'
-    if (this.snow) this.snow.visible = w === 'snow'
+    if (this.rain) this.rain.visible = w === 'rain' && !this.noParticles
+    if (this.snow) this.snow.visible = w === 'snow' && !this.noParticles
+    if (this.spray) this.spray.visible = !this.noParticles
     const fogT = w === 'fog' ? 0.026 : w === 'rain' ? 0.011 : w === 'snow' ? 0.014 : this.fogBase
     const fog = this.scene.fog as THREE.FogExp2
     fog.density += (fogT - fog.density) * Math.min(1, dt * 0.6)
@@ -1363,7 +1396,7 @@ export class DriveEngine {
       for (const c of this.cones) c.visible = lamps
     }
     // снег
-    if (this.snow && this.snowData && w === 'snow') {
+    if (this.snow && this.snowData && w === 'snow' && !this.noParticles) {
       const d = this.snowData
       const cx = this.camera.position.x
       for (let i = 0; i < d.length; i += 3) {
@@ -1604,6 +1637,73 @@ export class DriveEngine {
     if (t.speed < 0.05) t.speed = 0
   }
 
+  /**
+   * Спецтранспорт: объезд препятствий. Датчик «вперёд» ищет машину/объект в своей полосе на дистанции
+   * 14 м + 0.9 × скорость (в том числе игрока и аварийные/дорожные препятствия). Если путь закрыт —
+   * перестраивается в соседнюю полосу, где зазор больше и сбоку нет машины; если свободной полосы нет,
+   * снижает скорость до скорости впереди идущего и держит дистанцию (не проезжает сквозь).
+   */
+  private emergencyDrive(t: Traffic, dt: number) {
+    const look = 14 + t.speed * 0.9
+    const playerHalf = this.player.spec.L / 2
+    // зазор и скорость препятствия в коридоре шириной ~2 м вокруг боковой позиции x (игрок — тоже препятствие)
+    const probeX = (x: number) => {
+      let gap = Infinity
+      let sp = t.speed
+      for (const o of this.traffic) {
+        if (o === t || Math.abs(o.x - x) > 2.0) continue
+        const g = t.z - o.z - t.half - o.half
+        if (g > -0.5 && g < gap) {
+          gap = g
+          sp = o.speed
+        }
+      }
+      if (Math.abs(this.px - x) < 2.2) {
+        const g = t.z - playerHalf - t.half
+        if (g > -0.5 && g < gap) {
+          gap = g
+          sp = this.speed
+        }
+      }
+      return { gap, sp }
+    }
+    // проверяем весь путь перестроения: начало, середина и конец (машина едет по диагонали)
+    const probeLane = (lane: number) => {
+      const tx = laneX(lane)
+      const pts = [probeX(t.x), probeX((t.x + tx) / 2), probeX(tx)]
+      return pts.reduce((m, p) => (p.gap < m.gap ? p : m))
+    }
+    t.changeCd -= dt
+    const cur = probeLane(t.target)
+    if (cur.gap < look && t.changeCd <= 0) {
+      let best = t.target
+      let bestGap = cur.gap
+      for (const l of [t.target - 1, t.target + 1]) {
+        if (l < 0 || l >= LANES) continue
+        const p = probeLane(l)
+        // боковая проверка: рядом в соседней полосе не должно быть машины или игрока
+        const side = this.traffic.some((o) => o !== t && Math.abs(o.x - laneX(l)) < 2.0 && Math.abs(o.z - t.z) < o.half + t.half + 3.5)
+        const sideP = Math.abs(this.px - laneX(l)) < 2.2 && Math.abs(t.z) < t.half + playerHalf + 3.5
+        if (!side && !sideP && p.gap > bestGap + 3) {
+          best = l
+          bestGap = p.gap
+        }
+      }
+      if (best !== t.target) {
+        t.target = best // позиция плавно доезжает до полосы (см. интерполяцию в цикле трафика)
+        t.changeCd = 0.9
+      }
+    }
+    // скорость: подстраиваемся под препятствие впереди в выбранной полосе, не проезжаем сквозь
+    const f = probeLane(t.target)
+    let tv = t.base
+    if (f.gap < look) tv = Math.min(tv, f.sp * Math.min(1, Math.max(0.35, f.gap / (look * 0.6))))
+    if (f.gap < 6) tv = Math.min(tv, f.sp * 0.9)
+    if (f.gap < 2.5) tv = 0
+    t.speed += (tv - t.speed) * Math.min(1, dt * (tv < t.speed ? 3.5 : 1.2))
+    if (t.speed < 0.05) t.speed = 0
+  }
+
   /** Автопилот: держит полосу, объезжает помехи, тормозит на красный и перед впереди идущими */
   private autopilotStep(dt: number, maxV: number) {
     this.autoCap = maxV
@@ -1685,7 +1785,7 @@ export class DriveEngine {
 
   private updateWeather(dt: number, v: number) {
     const weather = this.curWeather
-    if (this.rain && this.rainData && weather === 'rain') {
+    if (this.rain && this.rainData && weather === 'rain' && !this.noParticles) {
       const d = this.rainData
       const cx = this.camera.position.x
       const fall = 34
@@ -1719,7 +1819,7 @@ export class DriveEngine {
         this.hemi.intensity += (0.45 - this.hemi.intensity) * Math.min(1, dt * 4)
       }
     }
-    if (this.spray && this.sprayData) {
+    if (this.spray && this.sprayData && !this.noParticles) {
       const s = this.sprayData
       const rearZ = this.player.spec.L / 2 - 0.2
       for (let i = 0; i < s.life.length; i++) {
@@ -1752,6 +1852,27 @@ export class DriveEngine {
 
   /* ---------------------------------------------------------------- */
 
+  /** Постобработка (только «Высокая»): свечение неона и бликов + тональная коррекция в OutputPass */
+  private initPost() {
+    if (!this.gfx.bloom) return
+    try {
+      const el = this.o.canvas.parentElement ?? this.o.canvas
+      const w = Math.max(160, el.clientWidth)
+      const h = Math.max(160, el.clientHeight)
+      const rt = new THREE.WebGLRenderTarget(w * this.pr, h * this.pr, { type: THREE.HalfFloatType, samples: this.gfx.antialias ? 4 : 0 })
+      const composer = new EffectComposer(this.renderer, rt)
+      composer.addPass(new RenderPass(this.scene, this.camera))
+      // сила, радиус, порог: светятся только яркие источники (вывески, фонари, блики)
+      composer.addPass(new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.45, 0.6, 0.88))
+      composer.addPass(new OutputPass())
+      composer.setPixelRatio(this.pr)
+      composer.setSize(w, h)
+      this.composer = composer
+    } catch {
+      this.composer = null // устройство не поддерживает — рисуем без постобработки
+    }
+  }
+
   private resize() {
     const el = this.o.canvas.parentElement ?? this.o.canvas
     const w = Math.max(160, el.clientWidth)
@@ -1761,9 +1882,15 @@ export class DriveEngine {
     this.o.canvas.style.height = '100%'
     this.camera.aspect = w / h
     this.camera.updateProjectionMatrix()
+    if (this.composer) {
+      this.composer.setPixelRatio(this.pr)
+      this.composer.setSize(w, h)
+    }
   }
 
   dispose() {
+    this.composer?.dispose()
+    this.composer = null
     this.disposed = true
     cancelAnimationFrame(this.raf)
     this.ro.disconnect()

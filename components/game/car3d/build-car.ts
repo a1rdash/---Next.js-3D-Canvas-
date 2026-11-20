@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
+import { applyCarPaint, setCarPaintFlakeColor, setCarPaintSun, type PaintQuality } from '@/lib/shaders/car-paint'
 import type { BodyType, Tuning, CarLook } from '@/lib/game/types'
 
 /* ------------------------------------------------------------------ */
@@ -140,6 +141,10 @@ export interface CarOptions {
   condition?: Partial<Record<'engine' | 'body' | 'interior' | 'suspension' | 'electrics' | 'documents', number>>
   /** кастомный внешний вид: цвет, покрытие, диски, шины, салон */
   look?: CarLook
+  /** установленные визуальные детали */
+  attachments?: string[]
+  /** шейдер автокраски: уровень качества и сила студийного отражения */
+  paint?: { quality: PaintQuality; fakeEnv: number }
 }
 
 export interface BuiltCar {
@@ -160,6 +165,10 @@ export interface BuiltCar {
   setBodyColor(hex: number): void
   /** кастом: краска и покрытие, диски, шины, цвет шин и салона */
   setLook(look: CarLook): void
+  /** детали, которые реально крепятся к кузову: спойлер, обвес, диффузор, воздухозаборник, выхлоп, LED-балки */
+  setAttachments(list: string[]): void
+  /** направление солнца для блёсток краски (раз в кадр) */
+  updatePaintSun(camera: THREE.Camera, worldDir: THREE.Vector3): void
   setLights(on: boolean, brake?: boolean, headIntensity?: number): void
   tick(dt: number, speedMs?: number): void
   dispose(): void
@@ -677,6 +686,96 @@ export function buildCar(opts: CarOptions): BuiltCar {
     for (const r of neonRings) r.visible = lvl >= 3
   }
 
+  /* ---- крепящиеся детали: появляются на модели при установке ---- */
+  const attachRoot = new THREE.Group()
+  body.add(attachRoot)
+  const attachObjs = new Map<string, THREE.Object3D>()
+  const carbonMat = track(new THREE.MeshStandardMaterial({ color: 0x0e0f12, roughness: 0.32, metalness: 0.7 }))
+  const chromeMat = track(new THREE.MeshStandardMaterial({ color: 0xdfe6f0, roughness: 0.12, metalness: 1 }))
+  const ledMat = track(new THREE.MeshStandardMaterial({ color: 0x0a1018, emissive: 0xbfe8ff, emissiveIntensity: 2.4, roughness: 0.3 }))
+  const tall = opts.bodyType === 'suv' || opts.bodyType === 'van' || opts.bodyType === 'pickup' || opts.bodyType === 'hatch'
+  const rbox = (w: number, h: number, d: number, mat: THREE.Material, x: number, y: number, z: number, r = 0.03, parent: THREE.Object3D = attachRoot) => {
+    const m = new THREE.Mesh(track(new RoundedBoxGeometry(w, h, d, 3, Math.min(r, Math.min(w, h, d) * 0.45))), mat)
+    m.position.set(x, y, z)
+    m.castShadow = true
+    parent.add(m)
+    return m
+  }
+  const makeAttachment = (kind: string): THREE.Object3D | null => {
+    const g = new THREE.Group()
+    const roofY = belt + spec.roofH
+    switch (kind) {
+      case 'spoiler': {
+        // у седанов/купе — на крышке багажника, у высоких кузовов — на кромке крыши
+        const y = tall ? roofY + 0.05 : belt + 0.3
+        const z = tall ? -spec.xr1 + 0.05 : L / 2 - 0.34
+        const wing = rbox(W * 0.88, 0.05, 0.34, carbonMat, 0, y, z, 0.02, g)
+        wing.rotation.x = -0.12
+        for (const sx of [-1, 1]) rbox(0.05, tall ? 0.1 : 0.26, 0.12, carbonMat, sx * W * 0.32, y - (tall ? 0.06 : 0.14), z + 0.02, 0.02, g)
+        for (const sx of [-1, 1]) rbox(0.04, 0.12, 0.38, carbonMat, sx * W * 0.44, y + 0.02, z, 0.015, g) // торцевые пластины
+        break
+      }
+      case 'skirts':
+        for (const sx of [-1, 1]) rbox(0.09, 0.13, L * 0.42, carbonMat, sx * (W / 2 + 0.025), c + 0.1, 0, 0.04, g)
+        break
+      case 'splitter':
+        rbox(W * 0.94, 0.05, 0.26, carbonMat, 0, c + 0.05, -(L / 2 - 0.02), 0.02, g)
+        break
+      case 'widebody':
+        for (const sx of [-1, 1]) for (const ax of [spec.wheelBase, -spec.wheelBase]) {
+          const flare = new THREE.Mesh(track(new THREE.TorusGeometry(spec.wheelR + 0.15, 0.075, 14, 44, Math.PI)), bodyMat)
+          flare.position.set(sx * (W / 2 + 0.075), spec.wheelR, -ax)
+          flare.rotation.y = Math.PI / 2
+          flare.castShadow = true
+          g.add(flare)
+        }
+        break
+      case 'ledbar':
+        rbox(W * 0.66, 0.045, 0.05, ledMat, 0, belt - 0.36, -(L / 2 - 0.03), 0.02, g)
+        break
+      case 'roofbar':
+        rbox(W * 0.7, 0.07, 0.11, ledMat, 0, roofY + 0.075, -spec.xf1 + 0.05, 0.03, g)
+        for (const sx of [-1, 1]) rbox(0.05, 0.06, 0.06, carbonMat, sx * W * 0.28, roofY + 0.03, -spec.xf1 + 0.05, 0.02, g)
+        break
+      case 'scoop':
+        rbox(0.52, 0.09, 0.72, bodyMat, 0, belt + 0.075, -(L / 2 - 1.05), 0.04, g)
+        rbox(0.4, 0.02, 0.14, carbonMat, 0, belt + 0.125, -(L / 2 - 0.78), 0.01, g)
+        break
+      case 'diffuser':
+        rbox(W * 0.72, 0.1, 0.26, carbonMat, 0, c + 0.11, L / 2 - 0.1, 0.03, g)
+        for (let i = -2; i <= 2; i++) rbox(0.03, 0.12, 0.3, carbonMat, i * 0.2, c + 0.1, L / 2 - 0.1, 0.01, g)
+        break
+      case 'exhaust':
+        for (const sx of [-1, 1]) {
+          const tip = new THREE.Mesh(track(new THREE.CylinderGeometry(0.055, 0.06, 0.16, 28)), chromeMat)
+          tip.rotation.x = Math.PI / 2
+          tip.position.set(sx * 0.52, c + 0.15, L / 2 + 0.03)
+          g.add(tip)
+        }
+        break
+      default:
+        return null
+    }
+    return g
+  }
+  const ATTACH_KINDS = ['spoiler', 'skirts', 'splitter', 'widebody', 'ledbar', 'roofbar', 'scoop', 'diffuser', 'exhaust']
+  const applyAttachments = (list: string[]) => {
+    if (low) return // у трафика деталей нет
+    for (const kind of ATTACH_KINDS) {
+      const on = list.includes(kind)
+      let obj = attachObjs.get(kind)
+      if (on && !obj) {
+        const made = makeAttachment(kind)
+        if (made) {
+          attachRoot.add(made)
+          attachObjs.set(kind, made)
+          obj = made
+        }
+      }
+      if (obj) obj.visible = on
+    }
+  }
+
   /* ---- кастом: покрытия, диски, шины, цвета ---- */
   const DESIGNS: Record<string, { extra: number; th: number; color: number; rough: number; metal: number; neon?: boolean; deep?: boolean }> = {
     steel: { extra: 0, th: 1.7, color: 0x6b6f78, rough: 0.55, metal: 0.8 },
@@ -711,6 +810,8 @@ export function buildCar(opts: CarOptions): BuiltCar {
     bodyMat.iridescence = f.irid
     bodyMat.iridescenceIOR = 1.6
     bodyMat.color.copy(paintBase.color)
+    // блёстки светлее самой краски (цветной металлик)
+    setCarPaintFlakeColor(bodyMat, paintBase.color.clone().lerp(new THREE.Color(0xffffff), 0.6))
     // диски
     const d = DESIGNS[l.wheelDesign ?? ''] ?? null
     if (d) {
@@ -821,6 +922,14 @@ export function buildCar(opts: CarOptions): BuiltCar {
       bodyMat.color.setHex(hex)
     },
 
+    setAttachments(list) {
+      applyAttachments(list)
+    },
+
+    updatePaintSun(camera, worldDir) {
+      setCarPaintSun(bodyMat, camera, worldDir)
+    },
+
     setLook(l) {
       applyLook(l)
       this.setCondition(lastCond)
@@ -923,6 +1032,9 @@ export function buildCar(opts: CarOptions): BuiltCar {
   }
 
   api.setTuning(opts.tuning, false)
+  // шейдер краски (если включён уровнем графики); при ошибке компиляции откатывается на обычный материал
+  if (!low && opts.paint) applyCarPaint(bodyMat, opts.paint.quality, { fakeEnv: opts.paint.fakeEnv })
+  api.setAttachments(opts.attachments ?? [])
   api.setLook(opts.look ?? {})
   api.setCondition(opts.condition ?? {})
   void spokeGroups

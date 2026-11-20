@@ -14,7 +14,9 @@ export function TabBackdrop({ tab, phase, garageLevel }: { tab: TabId; phase: Ph
   const [failed, setFailed] = useState(false)
   const [fadeKey, setFadeKey] = useState(0)
   const { season } = useEnv()
-  const { config: gfx } = useSettings()
+  const { config: gfx, heavy } = useSettings()
+  const heavyRef = useRef(heavy)
+  heavyRef.current = heavy
   const gfxRef = useRef<GraphicsConfig>(gfx)
   gfxRef.current = gfx
 
@@ -56,7 +58,8 @@ export function TabBackdrop({ tab, phase, garageLevel }: { tab: TabId; phase: Ph
     const loop = () => {
       st.raf = requestAnimationFrame(loop)
       const dt = clock.getDelta()
-      if (document.hidden || !st.current) return
+      // под тест-драйвом и в скрытой вкладке фон не рисуем: экономим GPU
+      if (document.hidden || heavyRef.current || !st.current) return
       acc += dt
       // фон — ambient-слой: FPS ниже, чем в игре, и зависит от уровня графики
       const bgFps = gfxRef.current.fps === 0 ? 45 : Math.min(30, gfxRef.current.fps)

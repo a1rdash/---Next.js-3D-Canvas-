@@ -1,4 +1,4 @@
-import { FREE_LOOKS, LOOK_CATALOG, LOOK_COLOR_COST, DIFFICULTY_GOALS, DIFFICULTY_ORDER, LOAN_TIERS, PAINT_COLORS, PAINT_COST, ACHIEVEMENTS, ACHIEVEMENT_REWARD_CAP, DAILY_REWARDS, DIFFICULTY_DEFS, DONATE_PACKS, EXAM_FEES, LICENSE_FAIL_MESSAGE, PART_ZONE, PARTS, PHASES, PHASE_LABELS, THIEF_NAMES, UPGRADE_DEFS, WEATHER_LABELS } from './data'
+import { PART_ATTACH, FREE_LOOKS, LOOK_CATALOG, LOOK_COLOR_COST, DIFFICULTY_GOALS, DIFFICULTY_ORDER, LOAN_TIERS, PAINT_COLORS, PAINT_COST, ACHIEVEMENTS, ACHIEVEMENT_REWARD_CAP, DAILY_REWARDS, DIFFICULTY_DEFS, DONATE_PACKS, EXAM_FEES, LICENSE_FAIL_MESSAGE, PART_ZONE, PARTS, PHASES, PHASE_LABELS, THIEF_NAMES, UPGRADE_DEFS, WEATHER_LABELS } from './data'
 import {
   generateAuctionLots,
   generateBlackLot,
@@ -21,6 +21,7 @@ import {
   rivalPool,
   xpForLevel,
 } from './generators'
+import { START_LEDGER_ENTRIES, START_MONEY } from './story'
 import { chance, clamp, formatMoney, pick, rand, randInt, roundTo, uid } from './random'
 import type { Car, CarLook, DifficultyId, GameState, Phase, Toast, Transaction, TxCategory, Upgrades, Weather, Zone } from './types'
 
@@ -340,7 +341,7 @@ function advancePhase(state: GameState): GameState {
 
 export function createInitialState(): GameState {
   const base: GameState = {
-    money: 100_000,
+    money: START_MONEY, // 100 000 наследство + 10 000 заначка (см. lib/game/story.ts)
     reputation: 50,
     xp: 0,
     level: 1,
@@ -409,7 +410,20 @@ export function createInitialState(): GameState {
     lot: [starter],
     contracts: generateContracts(seeded),
     blackMarket: generateBlackMarket(seeded),
-    log: ['День 1: на стоянке ждёт старенькая «Калинка» — начни с неё.'],
+    log: [
+      'День 1: дядя Михалыч оставил тебе гараж, 100 000 ₽ и старенькую «Калинку».',
+      'В бардачке «Калинки» нашёлся конверт с 10 000 ₽: дядин НЗ.',
+    ],
+    // стартовый журнал: откуда взялись деньги
+    ledger: START_LEDGER_ENTRIES.map((e) => ({
+      id: uid(),
+      day: 1,
+      phase: 'morning' as const,
+      amount: e.amount,
+      category: 'other' as const,
+      label: e.label,
+      at: Date.now(),
+    })),
   }
 }
 
@@ -797,6 +811,8 @@ function gameReducerInner(state: GameState, action: GameAction): GameState {
             : c.defects,
         tuning: part.tuning ? { ...c.tuning, [part.tuning]: (c.tuning[part.tuning] ?? 0) + 1 } : c.tuning,
         features: part.feature ? { ...c.features, [part.feature]: true } : c.features,
+        // визуальные детали: сразу появляются на 3D-модели
+        attachments: PART_ATTACH[part.id] ? Array.from(new Set([...(c.attachments ?? []), ...PART_ATTACH[part.id]])) : c.attachments,
         flightTanks:
           part.id === 'air-tanks'
             ? Math.min(3, (c.flightTanks ?? 0) + 1)
@@ -1108,7 +1124,8 @@ function gameReducerInner(state: GameState, action: GameAction): GameState {
         {
           ...state,
           difficulty: action.id,
-          money: Math.max(state.money, 350_000 + def.startBonus),
+          // деньги при смене сложности не пополняются (иначе можно «накрутить» стартовый капитал)
+          money: state.money,
         },
         `Сложность: ${def.label}`,
         'info',

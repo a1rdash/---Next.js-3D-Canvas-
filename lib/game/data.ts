@@ -324,7 +324,7 @@ export const UPGRADE_DEFS = {
   },
 } as const
 
-export { LOOK_CATALOG, FREE_LOOKS, LOOK_COLOR_COST } from './content'
+export { LOOK_CATALOG, FREE_LOOKS, LOOK_COLOR_COST, PART_ATTACH, ATTACH_LABELS } from './content'
 export { ACHIEVEMENTS, TIER_LABELS, THIEF_NAMES, BLACK_SELLERS, ACHIEVEMENT_REWARD_CAP, garageLevelOf } from './content'
 
 export const MUSIC_TRACKS = [

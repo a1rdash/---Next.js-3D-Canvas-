@@ -63,6 +63,12 @@ function TestDriveGame({
   const engineRef = useRef<{ setGas(on: boolean): void; setBrake(on: boolean): void; setSteer(d: -1 | 0 | 1): void; setTimeOfDay(p: 'day' | 'evening' | 'night'): void; toggleCruise(): void; toggleAutopilot(): void; moveLane(d: -1 | 1): void; setMuted(m: boolean): void; dispose(): void } | null>(null)
   const swipes = useRef(new Map<number, number>())
   const [showHint, setShowHint] = useState(!settings.driveHintDone)
+  // пока открыт тест-драйв, фоновые 3D-сцены и 2D-эффекты не рисуются (экономим GPU и батарею)
+  const { setHeavy } = settings
+  useEffect(() => {
+    setHeavy(true)
+    return () => setHeavy(false)
+  }, [setHeavy])
   const finishedRef = useRef(false)
   const [hud, setHud] = useState({ speedKmh: 0, hits: 0, progress: 0, leftMs: DURATION_MS, gear: 1, throttle: 0, maxKmh: 0, light: null as 'green' | 'yellow' | 'red' | null, lightLeft: 0, event: null as string | null, siren: false, violations: 0, cruiseOn: false, autoOn: false, blink: 0, warning: null as string | null })
   const [flash, setFlash] = useState(0)
@@ -89,7 +95,7 @@ function TestDriveGame({
         const e = new DriveEngine({
           canvas: canvasRef.current,
           // именно выбранная машина: её кузов, цвет, тюнинг, повреждения и износ
-          car: { bodyType: car.bodyType, color: car.color, tuning: car.tuning, condition: car.condition, look: car.look },
+          car: { bodyType: car.bodyType, color: car.color, tuning: car.tuning, condition: car.condition, look: car.look, attachments: car.attachments },
           stats,
           weather: startWeather,
           phase: startPhase,
@@ -248,7 +254,7 @@ function TestDriveGame({
 
         {/* верх: выход · время суток · поворотники · статистика (компактно, ниже строки состояния) */}
         <div data-control className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 pb-1 pl-[max(0.6rem,var(--sa-l))] pr-[max(0.6rem,var(--sa-r))] pt-[max(0.35rem,var(--sa-t))]">
-          <button type="button" onClick={quit} aria-label="Выход из тест-драйва" className={cn(soft, 'size-10')}><X className="size-5" /></button>
+          <button type="button" onClick={quit} aria-label="Выход из тест-драйва" className={cn(soft, 'size-11')}><X className="size-5" /></button>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-0.5 rounded-full border border-white/20 bg-black/25 p-0.5 backdrop-blur-md" role="group" aria-label="Время суток">
               {todBtn('day', Sun, 'День')}
@@ -283,10 +289,10 @@ function TestDriveGame({
         {/* подсказка новичкам: показывается только в первом заезде */}
         {showHint && (
           <>
-            <div className="pointer-events-none absolute max-w-[40%] rounded-xl bg-black/65 px-3 py-2 text-[11px] leading-snug text-white" style={{ left: 'max(0.6rem, var(--sa-l))', bottom: 'calc(max(0.5rem, var(--sa-b)) + 4.6rem)' }}>
+            <div className="pointer-events-none absolute max-w-[40%] rounded-xl bg-black/65 px-3 py-2 text-[11px] leading-snug text-white" style={{ left: 'max(0.6rem, var(--sa-l))', bottom: 'calc(max(0.5rem, var(--sa-b)) + 5.4rem)' }}>
               <b className="text-cyan-300">Повороты:</b> держите ◀ ▶. Можно вместе с газом: нажимайте двумя пальцами.
             </div>
-            <div className="pointer-events-none absolute max-w-[40%] rounded-xl bg-black/65 px-3 py-2 text-[11px] leading-snug text-white" style={{ right: 'max(0.6rem, var(--sa-r))', bottom: 'calc(max(0.5rem, var(--sa-b)) + 5.4rem)' }}>
+            <div className="pointer-events-none absolute max-w-[40%] rounded-xl bg-black/65 px-3 py-2 text-[11px] leading-snug text-white" style={{ right: 'max(0.6rem, var(--sa-r))', bottom: 'calc(max(0.5rem, var(--sa-b)) + 6.6rem)' }}>
               <b className="text-emerald-300">ГАЗ:</b> удерживайте, чтобы разгоняться. Отпустили: машина катится и замедляется. <b className="text-rose-300">СТОП</b> — тормоз.
             </div>
           </>
@@ -294,22 +300,22 @@ function TestDriveGame({
 
         {/* управление: слева — повороты, справа — тормоз/газ. Каждая кнопка независима (мультитач), удержание = действие */}
         <div className="absolute flex items-end gap-3" style={{ left: 'max(0.6rem, var(--sa-l))', bottom: 'max(0.5rem, var(--sa-b))' }}>
-          <HoldButton label="Влево (поворотник)" className={cn(soft, 'size-14')} onHold={(on) => engineRef.current?.setSteer(on ? -1 : 0)}><ArrowLeft className="size-6" /></HoldButton>
-          <HoldButton label="Вправо (поворотник)" className={cn(soft, 'size-14')} onHold={(on) => engineRef.current?.setSteer(on ? 1 : 0)}><ArrowRight className="size-6" /></HoldButton>
+          <HoldButton label="Влево (поворотник)" className={cn(soft, 'size-[4.5rem]')} onHold={(on) => engineRef.current?.setSteer(on ? -1 : 0)}><ArrowLeft className="size-8" /></HoldButton>
+          <HoldButton label="Вправо (поворотник)" className={cn(soft, 'size-[4.5rem]')} onHold={(on) => engineRef.current?.setSteer(on ? 1 : 0)}><ArrowRight className="size-8" /></HoldButton>
         </div>
         <div className="absolute flex items-end gap-3" style={{ right: 'max(0.6rem, var(--sa-r))', bottom: 'max(0.5rem, var(--sa-b))' }}>
           {(car.features?.cruise || car.features?.autopilot) && (
             <div data-control className="mb-1 flex flex-col gap-2">
               {car.features?.cruise && (
-                <button type="button" aria-label="Круиз-контроль" aria-pressed={hud.cruiseOn} onClick={() => engineRef.current?.toggleCruise()} className={cn(soft, 'size-10', hud.cruiseOn && '!bg-cyan-400/40 !opacity-90')}><Gauge className="size-5" /></button>
+                <button type="button" aria-label="Круиз-контроль" aria-pressed={hud.cruiseOn} onClick={() => engineRef.current?.toggleCruise()} className={cn(soft, 'size-12', hud.cruiseOn && '!bg-cyan-400/40 !opacity-90')}><Gauge className="size-5" /></button>
               )}
               {car.features?.autopilot && (
-                <button type="button" aria-label="Автопилот" aria-pressed={hud.autoOn} onClick={() => engineRef.current?.toggleAutopilot()} className={cn(soft, 'size-10', hud.autoOn && '!bg-fuchsia-400/40 !opacity-90')}><Bot className="size-5" /></button>
+                <button type="button" aria-label="Автопилот" aria-pressed={hud.autoOn} onClick={() => engineRef.current?.toggleAutopilot()} className={cn(soft, 'size-12', hud.autoOn && '!bg-fuchsia-400/40 !opacity-90')}><Bot className="size-5" /></button>
               )}
             </div>
           )}
-          <HoldButton label="Тормоз (держать)" className={cn(soft, 'size-14 !bg-rose-500/30 text-[11px] font-bold')} onHold={(on) => engineRef.current?.setBrake(on)}>СТОП</HoldButton>
-          <HoldButton label="Газ (держать)" className={cn(soft, 'size-[4.5rem] !bg-emerald-400/30 text-sm font-bold')} onHold={(on) => { engineRef.current?.setGas(on); if (on) dismissHint() }}>ГАЗ</HoldButton>
+          <HoldButton label="Тормоз (держать)" className={cn(soft, 'size-[4.5rem] !bg-rose-500/30 text-xs font-bold')} onHold={(on) => engineRef.current?.setBrake(on)}>СТОП</HoldButton>
+          <HoldButton label="Газ (держать)" className={cn(soft, 'size-24 !bg-emerald-400/30 text-base font-bold')} onHold={(on) => { engineRef.current?.setGas(on); if (on) dismissHint() }}>ГАЗ</HoldButton>
         </div>
       </div>
     </div>

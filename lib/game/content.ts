@@ -80,7 +80,31 @@ export const FREE_LOOKS = LOOK_CATALOG.filter((l) => l.price === 0).map((l) => l
 /** Стоимость кастомных цветов (применяются в гараже) */
 export const LOOK_COLOR_COST = { paint: 12_000, rimColor: 6_000, tireColor: 6_000, interior: 9_000 } as const
 
+/**
+ * Какие визуальные детали появляются на 3D-модели после установки части.
+ * Ключи — id запчастей, значения — виды крепления (их рисует build-car.ts).
+ */
+export const PART_ATTACH: Record<string, string[]> = {
+  bodykit: ['skirts', 'splitter'],
+  'carbon-spoiler': ['spoiler'],
+  widebody: ['widebody'],
+  'led-kit': ['ledbar'],
+  'hood-scoop': ['scoop'],
+  diffuser: ['diffuser'],
+  'sport-exhaust': ['exhaust'],
+  'roof-lightbar': ['roofbar'],
+}
+
+export const ATTACH_LABELS: Record<string, string> = {
+  skirts: 'Пороги', splitter: 'Сплиттер', spoiler: 'Спойлер', widebody: 'Широкие арки', ledbar: 'LED-балка',
+  scoop: 'Воздухозаборник', diffuser: 'Диффузор', exhaust: 'Спорт-выхлоп', roofbar: 'Балка на крыше',
+}
+
 export const EXTRA_PARTS: PartDef[] = [
+  P('hood-scoop', 'Капот с воздухозаборником', 'body', 3, 45_000, 8, 'Виден на капоте: воздухозаборник'),
+  P('diffuser', 'Задний диффузор «Карбон»', 'body', 3, 58_000, 8, 'Виден на заднем бампере: диффузор'),
+  P('sport-exhaust', 'Спорт-выхлоп «Двойной»', 'engine', 2, 36_000, 6, 'Виден сзади: хромированные насадки'),
+  P('roof-lightbar', 'Светодиодная балка на крышу', 'electrics', 3, 28_000, 5, 'Светящаяся балка на крыше'),
   P('gearbox-sport', 'Спортивная коробка (короткие передачи)', 'engine', 2, 48_000, 10, 'Тюнинг коробки +1: выше максимальная скорость', 'gearbox'),
   P('gearbox-close', 'Коробка с близкими ступенями', 'engine', 3, 95_000, 10, 'Тюнинг коробки +1: выше максимальная скорость', 'gearbox'),
   P('gearbox-dct', 'Робот-коробка с двумя сцеплениями', 'engine', 4, 210_000, 15, 'Тюнинг коробки +1: заметно выше максимальная скорость', 'gearbox'),

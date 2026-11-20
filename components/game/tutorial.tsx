@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { STORY_LETTER } from '@/lib/game/story'
 import { useSettings } from '@/lib/settings'
 import { cn } from '@/lib/utils'
 
@@ -22,7 +23,12 @@ function ControlsDiagram() {
   )
 }
 
-const STEPS: { title: string; body: string[]; extra?: 'controls' }[] = [
+const STEPS: { title: string; body: string[]; extra?: 'controls' | 'letter' }[] = [
+  {
+    title: STORY_LETTER.title,
+    body: STORY_LETTER.lines,
+    extra: 'letter',
+  },
   {
     title: 'Добро пожаловать, перекуп!',
     body: [
@@ -82,10 +88,11 @@ export function Tutorial() {
             Пропустить <X className="size-3.5" aria-hidden />
           </button>
         </div>
-        <div className="mt-3 space-y-2 text-sm leading-relaxed">
+        <div className={cn('mt-3 space-y-2 text-sm leading-relaxed', step.extra === 'letter' && 'rounded-xl border border-amber-300/30 bg-amber-100/10 p-3 font-serif italic')}>
           {step.body.map((t) => (
             <p key={t}>{t}</p>
           ))}
+          {step.extra === 'letter' && <p className="pt-1 text-right not-italic text-amber-200/90">{STORY_LETTER.signature}</p>}
         </div>
         {step.extra === 'controls' && <ControlsDiagram />}
         <div className="mt-4 flex items-center justify-between">

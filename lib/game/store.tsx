@@ -1,5 +1,6 @@
 'use client'
 
+import { START_MONEY } from './story'
 import {
   createContext,
   useContext,
@@ -78,7 +79,7 @@ function loadSaved(): GameState {
 
       toasts: [],
       activeClientId: null,
-      money: typeof parsed.money === 'number' && parsed.money < 80_000 ? 450_000 : (typeof parsed.money === 'number' ? parsed.money : 450_000),
+      money: typeof parsed.money === 'number' ? parsed.money : START_MONEY,
     }
   } catch {
     return createInitialState()

@@ -158,7 +158,8 @@ function Snow({ density }: { density: number }) {
 }
 
 export function WeatherOverlay({ weather }: { weather: Weather | 'snow' }) {
-  const { config } = useSettings()
+  const { config, heavy } = useSettings()
+  if (heavy) return null // под тест-драйвом 2D-эффекты не нужны
   // на низкой графике частицы (капли, снежинки) отключены; на средней — половина; на высокой — все
   if ((weather === 'snow' || weather === 'rain') && config.particles <= 0) return null
   if (weather === 'snow') return <Snow density={config.particles} />
