@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">GarageEmpire</string>
+    <string name="title_activity_main">GarageEmpire</string>
+    <string name="package_name">com.GarageEmpire.app</string>
+    <string name="custom_url_scheme">com.GarageEmpire.app</string>
+</resources>
